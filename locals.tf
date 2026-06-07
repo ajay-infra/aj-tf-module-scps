@@ -205,6 +205,126 @@ locals {
         }
       }]
     })
+
+    # Three required tags on every Terraform-managed resource:
+    #   Env        — environment (dev | staging | uat | prod)
+    #   Team       — owning team slug
+    #   ManagedBy  — terraform | manual
+    #
+    # One Deny statement per tag so the violation message identifies which tag is missing.
+    # Service-linked roles are excluded — EKS/RDS/ElastiCache use them internally and
+    # propagate tags separately (via tag propagation on the parent resource).
+    # Only actions that support aws:RequestTag at creation time are included.
+    require-tags = jsonencode({
+      Version = "2012-10-17"
+      Statement = [
+        {
+          Sid    = "RequireTagEnv"
+          Effect = "Deny"
+          Action = [
+            "ec2:RunInstances",
+            "ec2:CreateVpc",
+            "ec2:CreateSubnet",
+            "ec2:CreateSecurityGroup",
+            "ec2:CreateInternetGateway",
+            "ec2:CreateNatGateway",
+            "ec2:CreateVolume",
+            "ec2:CreateClientVpnEndpoint",
+            "eks:CreateCluster",
+            "eks:CreateNodegroup",
+            "rds:CreateDBCluster",
+            "rds:CreateDBInstance",
+            "elasticache:CreateReplicationGroup",
+            "elasticache:CreateServerlessCache",
+            "kms:CreateKey",
+            "cloudfront:CreateDistribution",
+            "elasticloadbalancing:CreateLoadBalancer",
+            "ecr:CreateRepository",
+            "logs:CreateLogGroup",
+            "ds:CreateDirectory",
+          ]
+          Resource = "*"
+          Condition = {
+            Null = {
+              "aws:RequestTag/Env" = "true"
+            }
+            StringNotLike = {
+              "aws:PrincipalArn" = "arn:aws:iam::*:role/aws-service-role/*"
+            }
+          }
+        },
+        {
+          Sid    = "RequireTagTeam"
+          Effect = "Deny"
+          Action = [
+            "ec2:RunInstances",
+            "ec2:CreateVpc",
+            "ec2:CreateSubnet",
+            "ec2:CreateSecurityGroup",
+            "ec2:CreateInternetGateway",
+            "ec2:CreateNatGateway",
+            "ec2:CreateVolume",
+            "ec2:CreateClientVpnEndpoint",
+            "eks:CreateCluster",
+            "eks:CreateNodegroup",
+            "rds:CreateDBCluster",
+            "rds:CreateDBInstance",
+            "elasticache:CreateReplicationGroup",
+            "elasticache:CreateServerlessCache",
+            "kms:CreateKey",
+            "cloudfront:CreateDistribution",
+            "elasticloadbalancing:CreateLoadBalancer",
+            "ecr:CreateRepository",
+            "logs:CreateLogGroup",
+            "ds:CreateDirectory",
+          ]
+          Resource = "*"
+          Condition = {
+            Null = {
+              "aws:RequestTag/Team" = "true"
+            }
+            StringNotLike = {
+              "aws:PrincipalArn" = "arn:aws:iam::*:role/aws-service-role/*"
+            }
+          }
+        },
+        {
+          Sid    = "RequireTagManagedBy"
+          Effect = "Deny"
+          Action = [
+            "ec2:RunInstances",
+            "ec2:CreateVpc",
+            "ec2:CreateSubnet",
+            "ec2:CreateSecurityGroup",
+            "ec2:CreateInternetGateway",
+            "ec2:CreateNatGateway",
+            "ec2:CreateVolume",
+            "ec2:CreateClientVpnEndpoint",
+            "eks:CreateCluster",
+            "eks:CreateNodegroup",
+            "rds:CreateDBCluster",
+            "rds:CreateDBInstance",
+            "elasticache:CreateReplicationGroup",
+            "elasticache:CreateServerlessCache",
+            "kms:CreateKey",
+            "cloudfront:CreateDistribution",
+            "elasticloadbalancing:CreateLoadBalancer",
+            "ecr:CreateRepository",
+            "logs:CreateLogGroup",
+            "ds:CreateDirectory",
+          ]
+          Resource = "*"
+          Condition = {
+            Null = {
+              "aws:RequestTag/ManagedBy" = "true"
+            }
+            StringNotLike = {
+              "aws:PrincipalArn" = "arn:aws:iam::*:role/aws-service-role/*"
+            }
+          }
+        },
+      ]
+    })
   }
 
   # Only the policies in var.enabled_policies are created

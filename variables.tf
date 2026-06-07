@@ -42,7 +42,7 @@ variable "target_ou_ids" {
 variable "enabled_policies" {
   type        = list(string)
   description = <<-EOT
-    SCP policy names to create and attach. Defaults to all 10 guardrails.
+    SCP policy names to create and attach. Defaults to all 11 guardrails.
     Remove a name from this list to skip that policy (e.g. during initial rollout).
     Available policies:
       deny-root               — prevent root user from taking any action
@@ -55,6 +55,7 @@ variable "enabled_policies" {
       deny-disable-guardduty  — prevent disabling or deleting GuardDuty detectors
       deny-public-s3-acls     — deny public-read/public-read-write S3 ACLs
       require-ebs-encryption  — deny EC2 launch with unencrypted EBS volumes
+      require-tags            — deny resource creation without Env, Team, ManagedBy tags
   EOT
   default = [
     "deny-root",
@@ -67,6 +68,7 @@ variable "enabled_policies" {
     "deny-disable-guardduty",
     "deny-public-s3-acls",
     "require-ebs-encryption",
+    "require-tags",
   ]
 }
 

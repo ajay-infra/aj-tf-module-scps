@@ -22,10 +22,14 @@ source = "github.com/ajaylakma/aj-tf-module-scps?ref=scps-01"
 | `sops_environments` | Environments where SOPS encryption is enforced |
 
 ## Enforced guardrails (label-taxonomy alignment)
-SCPs deny resource creation unless these tags are present:
-- `Env`
-- `Team`
-- `ManagedBy`
+11 policies total. The `require-tags` policy denies resource creation unless these tags are present:
+- `Env` — environment (dev | staging | uat | prod)
+- `Team` — owning team slug
+- `ManagedBy` — terraform | manual
+
+Covered services: EC2, VPC subnets/SGs/IGW/NAT/volumes, Client VPN, EKS cluster+nodegroup,
+RDS cluster+instance, ElastiCache, KMS, CloudFront, ELB, ECR, CloudWatch Logs, Directory Service.
+Service-linked roles are excluded (EKS/RDS/ElastiCache internal operations).
 
 ## AWS tags applied
 `Env`, `Team`, `ManagedBy` (on the SCP resources themselves)
