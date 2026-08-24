@@ -14,7 +14,7 @@ target_ou_ids = []
 # Regions — deny all API calls outside this list (global services excluded)
 allowed_regions = ["us-east-1"]
 
-# All 10 SCPs enabled by default
+# All 11 SCPs enabled by default
 enabled_policies = [
   "deny-root",
   "deny-leave-org",
@@ -26,6 +26,7 @@ enabled_policies = [
   "deny-disable-guardduty",
   "deny-public-s3-acls",
   "require-ebs-encryption",
+  "require-tags",
 ]
 
 # SOPS KMS keys — one per environment

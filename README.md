@@ -6,7 +6,7 @@ Terraform module for AWS Organizations Service Control Policies (SCPs) and SOPS 
 
 ## What this module does
 
-**SCPs** are organization-level guardrails that override IAM policies. Even an account administrator cannot bypass an SCP denial. This module provisions 10 guardrail policies and attaches them to the org root (or specific OUs).
+**SCPs** are organization-level guardrails that override IAM policies. Even an account administrator cannot bypass an SCP denial. This module provisions 11 guardrail policies and attaches them to the org root (or specific OUs).
 
 **SOPS KMS keys** (one per environment) encrypt secrets committed to `k8s-manifests`. ArgoCD decrypts them at render time via the ksops plugin. These keys live in the management account and their policy grants Decrypt to ArgoCD's Pod Identity role in each cluster.
 
@@ -32,7 +32,7 @@ This module is applied **once** via `provision-org.yml` in `aj-infra-release` (n
 
 ---
 
-## The 10 guardrail policies
+## The 11 guardrail policies
 
 | Policy | What it blocks | Why |
 |---|---|---|
@@ -46,8 +46,9 @@ This module is applied **once** via `provision-org.yml` in `aj-infra-release` (n
 | `deny-disable-guardduty` | Deleting or disassociating GuardDuty | Threat detection stays on in every account |
 | `deny-public-s3-acls` | Public-read / public-read-write ACLs | Belt-and-suspenders alongside S3 Block Public Access |
 | `require-ebs-encryption` | EC2 launch with unencrypted EBS volumes | All persistent storage encrypted at rest |
+| `require-tags` | Resource creation without `Env`, `Team`, `ManagedBy` tags | Enforces the platform's tagging taxonomy at creation time, not after the fact |
 
-Each policy is individually toggleable via `enabled_policies`. Start with all 10 — disable only if a specific policy blocks a legitimate use case (document why).
+Each policy is individually toggleable via `enabled_policies`. Start with all 11 — disable only if a specific policy blocks a legitimate use case (document why).
 
 ---
 
@@ -83,7 +84,7 @@ terraform init \
   -backend-config="bucket=${TF_STATE_BUCKET}" \
   -backend-config="key=org/scps/terraform.tfstate" \
   -backend-config="region=us-east-1" \
-  -backend-config="dynamodb_table=${TF_LOCK_TABLE}"
+  -backend-config="use_lockfile=true"
 
 terraform apply -var-file=envs/prod.tfvars
 ```
@@ -105,7 +106,7 @@ creation_rules:
 
 ## Usage
 
-### Minimal — attach all 10 SCPs to org root, create SOPS keys
+### Minimal — attach all 11 SCPs to org root, create SOPS keys
 
 ```hcl
 module "scps" {
@@ -167,6 +168,7 @@ module "scps" {
     "deny-disable-guardduty",
     "deny-public-s3-acls",
     "require-ebs-encryption",
+    "require-tags",
   ]
 }
 ```
@@ -187,7 +189,7 @@ terraform apply -var-file=envs/prod.tfvars
 | `org_root_id` | yes | — | AWS Organizations root ID (format: `r-xxxx`) |
 | `target_ou_ids` | no | `[]` | OU IDs to attach SCPs to. Empty = attach to `org_root_id` |
 | `allowed_regions` | no | `["us-east-1"]` | Regions permitted by the `restrict-regions` SCP |
-| `enabled_policies` | no | all 10 | List of SCP policy names to create and attach |
+| `enabled_policies` | no | all 11 | List of SCP policy names to create and attach |
 | `sops_environments` | no | `["dev","staging","prod"]` | Environments for which KMS SOPS keys are created |
 | `argocd_role_arns` | no | `{}` | Map of `env → ArgoCD Pod Identity role ARN` for KMS Decrypt |
 | `engineer_role_arns` | no | `[]` | IAM role ARNs that can Encrypt/Decrypt with SOPS locally |
@@ -224,7 +226,7 @@ terraform apply -var-file=envs/prod.tfvars
 1. **AWS Organizations must be enabled** in the management account. SCPs require Organizations — they have no effect in a standalone account.
 2. **SCP feature must be enabled** in Organizations: `aws organizations enable-policy-type --policy-type SERVICE_CONTROL_POLICY --root-id <root-id>`
 3. **Terraform runs in the management account** — either directly or by assuming a role in it via GitHub OIDC.
-4. **S3 state bucket and DynamoDB lock table** must exist before `terraform init`.
+4. **S3 state bucket** must exist before `terraform init` (state locking is native S3, via `use_lockfile=true` — no DynamoDB table needed).
 
 ---
 
@@ -232,5 +234,5 @@ terraform apply -var-file=envs/prod.tfvars
 
 | Tool | Version |
 |---|---|
-| Terraform | `= 1.7.5` |
+| Terraform | `= 1.10.5` |
 | AWS provider | `= 5.100.0` |

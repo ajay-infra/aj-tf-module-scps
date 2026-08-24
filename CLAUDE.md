@@ -10,7 +10,7 @@ L0 of the platform — AWS Organizations SCPs + SOPS KMS keys. Applied once to t
 management account before any cluster or workload is provisioned.
 
 Two responsibilities:
-1. **10 SCP guardrails** — org-level denies that override all IAM policies
+1. **11 SCP guardrails** — org-level denies that override all IAM policies
 2. **KMS SOPS keys** — one per env (dev/staging/prod), used by ksops in ArgoCD
 
 ---
@@ -35,7 +35,7 @@ No submodules — SCPs are flat (policy + attachment), KMS keys are for_each.
 
 - **All policy content inline via jsonencode** — no separate JSON files, no templatefile
   needed. The regions list in restrict-regions stays a variable. Easier to review.
-- **enabled_policies list** — defaults to all 10. Remove a name to skip that SCP.
+- **enabled_policies list** — defaults to all 11. Remove a name to skip that SCP.
 - **management_account_id variable** — no data.aws_caller_identity, so CI plan dry
   run works with dummy creds + skip_* flags.
 - **argocd_role_arns defaults to {}** — add once ArgoCD is deployed and Pod Identity
@@ -62,7 +62,7 @@ terraform init \
   -backend-config="bucket=tf-state-central-MGMT_ACCOUNT" \
   -backend-config="key=org/scps/terraform.tfstate" \
   -backend-config="region=us-east-1" \
-  -backend-config="dynamodb_table=tf-locks-central"
+  -backend-config="use_lockfile=true"
 
 terraform apply -var-file=envs/prod.tfvars
 ```
