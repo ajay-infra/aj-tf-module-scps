@@ -12,7 +12,7 @@ target_ou_ids = []
 # Primary region only. Add additional regions if the platform expands.
 allowed_regions = ["us-east-1"]
 
-# All SCPs enabled in production
+# All 11 SCPs enabled in production
 enabled_policies = [
   "deny-root",
   "deny-leave-org",
@@ -24,6 +24,7 @@ enabled_policies = [
   "deny-disable-guardduty",
   "deny-public-s3-acls",
   "require-ebs-encryption",
+  "require-tags",
 ]
 
 # SOPS KMS keys

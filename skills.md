@@ -8,7 +8,7 @@ Provisions AWS Service Control Policies (SCPs) at the Organization level. Enforc
 
 ## Stable ref
 ```
-source = "github.com/ajaylakma/aj-tf-module-scps?ref=scps-01"
+source = "github.com/ajay-infra/aj-tf-module-scps?ref=v0.1.0"
 ```
 
 ## Key inputs
@@ -32,11 +32,11 @@ RDS cluster+instance, ElastiCache, KMS, CloudFront, ELB, ECR, CloudWatch Logs, D
 Service-linked roles are excluded (EKS/RDS/ElastiCache internal operations).
 
 ## AWS tags applied
-`Env`, `Team`, `ManagedBy` (on the SCP resources themselves)
+On the SCP module's own resources: `Project`, `ManagedBy`, `Repository`, `Team`, `CostCenter` (see `locals.full_tags`). This is separate from `Env`/`Team`/`ManagedBy` — the tags the `require-tags` *policy* enforces on other org resources (EC2, EKS, RDS, etc.); there's no `env` input variable, so the module's own resources are never tagged `Env`.
 
 ## Branching convention
 - `main` — active development
-- `scps-01` — stable pinned release
+- semver tags (`v0.1.0`, ...) — stable pinned releases, per `README.md` usage examples
 
 ## CI checks
 fmt, validate, plan (dry-run), tfsec/checkov
