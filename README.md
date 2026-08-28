@@ -6,7 +6,7 @@ Terraform module for AWS Organizations Service Control Policies (SCPs) and SOPS 
 
 ## What this module does
 
-**SCPs** are organization-level guardrails that override IAM policies. Even an account administrator cannot bypass an SCP denial. This module provisions 11 guardrail policies and attaches them to the org root (or specific OUs).
+**SCPs** are organization-level guardrails that override IAM policies. Even an account administrator cannot bypass an SCP denial. This module defines 11 guardrails, merges them into 4 SCP documents, and attaches those documents to the org root and OUs you nominate.
 
 **SOPS KMS keys** (one per environment) encrypt secrets committed to `k8s-manifests`. ArgoCD decrypts them at render time via the ksops plugin. These keys live in the management account and their policy grants Decrypt to ArgoCD's Pod Identity role in each cluster.
 
@@ -46,9 +46,9 @@ This module is applied **once** via `provision-org.yml` in `aj-infra-release` (n
 | `deny-disable-guardduty` | Deleting or disassociating GuardDuty | Threat detection stays on in every account |
 | `deny-public-s3-acls` | Public-read / public-read-write ACLs | Belt-and-suspenders alongside S3 Block Public Access |
 | `require-ebs-encryption` | EC2 launch with unencrypted EBS volumes | All persistent storage encrypted at rest |
-| `require-tags` | Resource creation without `Env`, `Team`, `ManagedBy` tags | Enforces the platform's tagging taxonomy at creation time, not after the fact |
+| `require-tags` | Resource creation without `Environment`, `Team`, `ManagedBy` tags | Enforces the platform's tagging taxonomy at creation time, not after the fact |
 
-Each policy is individually toggleable via `enabled_policies`. Start with all 11 — disable only if a specific policy blocks a legitimate use case (document why).
+Each guardrail is individually toggleable via `enabled_policies`. Start with all 11 — disable only if one blocks a legitimate use case (document why). See **Bundles and attachment** below for how these 11 become 4 attached documents.
 
 ---
 
@@ -104,13 +104,38 @@ creation_rules:
 
 ---
 
+## Bundles and attachment
+
+The 11 guardrails are not attached individually. **AWS caps SCP attachments at 5 per entity** (root, OU or account), and the built-in `FullAWSAccess` consumes one of those, leaving a real budget of 4. That quota is hard — it cannot be raised through Service Quotas. Attaching 11 separate policies to the root fails on the fifth.
+
+A single SCP *document*, by contrast, may be up to **5,120 characters**. Merging related guardrails therefore trades cheap document space for scarce attachment slots. The four bundles and their measured sizes:
+
+| Bundle | Guardrails | Size | Attach at |
+|---|---|---|---|
+| `baseline` | `deny-root`, `deny-leave-org`, `deny-disable-cloudtrail`, `deny-iam-users` | 578 | org root — universal |
+| `security-hygiene` | `require-imdsv2`, `require-ebs-encryption`, `deny-disable-guardduty`, `restrict-regions` | 994 | Platform, Product, SaaS |
+| `data-protection` | `deny-unencrypted-s3`, `deny-public-s3-acls` | 393 | Platform, Product, SaaS |
+| `governance` | `require-tags` | 2,125 | production-grade OUs only |
+
+`governance` sits alone because `require-tags` repeats its 20-action list once per required tag, making it larger than the other ten guardrails combined.
+
+Each bundle attaches at the **shallowest OU it should govern**; inheritance carries it to every account beneath. Inherited policies are evaluated against those accounts but **do not consume their attachment slots** — depth is free, breadth at a single entity is not.
+
+`enabled_policies` still gates individual guardrails. Removing one drops it from whichever bundle contains it; if that empties a bundle, the bundle is not created.
+
+> **Creation and attachment are separate on purpose.** Organizations policy names are unique org-wide, so each bundle is created exactly once, in one state, then attached to as many targets as needed. Running this module once per OU collides on the second apply with `DuplicatePolicyException`, and would also duplicate the SOPS KMS keys and their aliases.
+
+---
+
 ## Usage
 
-### Minimal — attach all 11 SCPs to org root, create SOPS keys
+### Minimal — baseline bundle at the org root
+
+With `bundle_attachments` omitted, the module creates all four bundles but attaches only `baseline`, at the root. Safe default: an unattached SCP has no effect.
 
 ```hcl
 module "scps" {
-  source = "github.com/ajay-infra/aj-tf-module-scps?ref=v0.1.0"
+  source = "github.com/ajay-infra/aj-tf-module-scps?ref=v0.2.0"
 
   management_account_id = "123456789012"
   org_root_id           = "r-ab12"
@@ -118,11 +143,34 @@ module "scps" {
 }
 ```
 
+### Full OU tree
+
+Mirrors `aj-infra-context/arch/account-model.md` §7. Worst case here is 2 attachments on any single entity, against a ceiling of 4.
+
+```hcl
+module "scps" {
+  source = "github.com/ajay-infra/aj-tf-module-scps?ref=v0.2.0"
+
+  management_account_id = "123456789012"
+  org_root_id           = "r-ab12"
+  allowed_regions       = ["us-east-1"]
+
+  bundle_attachments = {
+    baseline         = ["r-ab12"]
+    security-hygiene = ["ou-ab12-platform", "ou-ab12-product", "ou-ab12-saas"]
+    data-protection  = ["ou-ab12-platform", "ou-ab12-product", "ou-ab12-saas"]
+    governance       = ["ou-ab12-prod", "ou-ab12-regulated", "ou-ab12-dedicated"]
+  }
+}
+```
+
+Sandbox appears in no list, so it inherits `baseline` from the root and nothing else — deliberate, so experimentation is not blocked by region pinning or tag enforcement.
+
 ### With ArgoCD decrypt grants
 
 ```hcl
 module "scps" {
-  source = "github.com/ajay-infra/aj-tf-module-scps?ref=v0.1.0"
+  source = "github.com/ajay-infra/aj-tf-module-scps?ref=v0.2.0"
 
   management_account_id = "123456789012"
   org_root_id           = "r-ab12"
@@ -141,22 +189,9 @@ module "scps" {
 }
 ```
 
-### Scoped to specific OUs (advanced)
+### Disabling a guardrail
 
 ```hcl
-module "scps" {
-  source = "github.com/ajay-infra/aj-tf-module-scps?ref=v0.1.0"
-
-  management_account_id = "123456789012"
-  org_root_id           = "r-ab12"
-
-  # Attach to specific OUs instead of root
-  target_ou_ids = [
-    "ou-ab12-workloads",
-    "ou-ab12-security",
-  ]
-
-  # Disable a policy that conflicts with a specific workload requirement
   enabled_policies = [
     "deny-root",
     "deny-leave-org",
@@ -170,7 +205,6 @@ module "scps" {
     "require-ebs-encryption",
     "require-tags",
   ]
-}
 ```
 
 ### Using envs/ file directly
@@ -187,9 +221,9 @@ terraform apply -var-file=envs/prod.tfvars
 |---|---|---|---|
 | `management_account_id` | yes | — | 12-digit management account ID — used in KMS key policies |
 | `org_root_id` | yes | — | AWS Organizations root ID (format: `r-xxxx`) |
-| `target_ou_ids` | no | `[]` | OU IDs to attach SCPs to. Empty = attach to `org_root_id` |
+| `bundle_attachments` | no | `{}` | Map of `bundle name → [target IDs]`. Empty = `baseline` at `org_root_id`. Validated: known bundle names, max 4 bundles per target |
 | `allowed_regions` | no | `["us-east-1"]` | Regions permitted by the `restrict-regions` SCP |
-| `enabled_policies` | no | all 11 | List of SCP policy names to create and attach |
+| `enabled_policies` | no | all 11 | Guardrails to include. Filters bundle membership — not a list of bundles |
 | `sops_environments` | no | `["dev","staging","prod"]` | Environments for which KMS SOPS keys are created |
 | `argocd_role_arns` | no | `{}` | Map of `env → ArgoCD Pod Identity role ARN` for KMS Decrypt |
 | `engineer_role_arns` | no | `[]` | IAM role ARNs that can Encrypt/Decrypt with SOPS locally |
@@ -207,9 +241,11 @@ terraform apply -var-file=envs/prod.tfvars
 
 | Output | Description |
 |---|---|
-| `scp_policy_ids` | Map of `policy name → Organizations policy ID` |
-| `scp_policy_arns` | Map of `policy name → Organizations policy ARN` |
-| `enabled_policy_names` | List of policy names that were created |
+| `scp_bundle_ids` | Map of `bundle name → Organizations policy ID` |
+| `scp_bundle_arns` | Map of `bundle name → Organizations policy ARN` |
+| `bundle_members` | Map of `bundle name → guardrails merged into it`, after `enabled_policies` filtering |
+| `bundle_document_sizes` | Map of `bundle name → encoded size in characters`. Limit is 5,120 |
+| `attachments_per_target` | Map of `target ID → attachment count`. Ceiling is 4; excludes inherited |
 
 ### KMS SOPS
 

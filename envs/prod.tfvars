@@ -1,18 +1,30 @@
 # envs/prod.tfvars — production org values
 # Applied ONCE to the management account. All member accounts are covered.
-# Applied by: aj-infra-release / provision-org.yml (not yet built)
+# Applied by: aj-infra-release / .github/workflows/aws/provision-org.yml
 
 # Replace with real values from AWS Organizations console
 management_account_id = "REPLACE_WITH_MANAGEMENT_ACCOUNT_ID"
 org_root_id           = "REPLACE_WITH_ORG_ROOT_ID"
 
-# Start with root — narrows to specific OUs once org structure is defined
-target_ou_ids = []
+# Bundle attachment, mapped onto the OU tree in
+# aj-infra-context/arch/account-model.md §7. Baseline is universal and sits at
+# the root; the rest attach at the shallowest OU they should govern and reach
+# member accounts by inheritance. Sandbox appears nowhere below, so it inherits
+# baseline only — deliberately.
+#
+# Max attachments landing on any single entity here: 2. AWS allows 5, of which
+# FullAWSAccess consumes 1.
+bundle_attachments = {
+  baseline         = ["REPLACE_WITH_ORG_ROOT_ID"]
+  security-hygiene = ["REPLACE_WITH_OU_PLATFORM", "REPLACE_WITH_OU_PRODUCT", "REPLACE_WITH_OU_SAAS"]
+  data-protection  = ["REPLACE_WITH_OU_PLATFORM", "REPLACE_WITH_OU_PRODUCT", "REPLACE_WITH_OU_SAAS"]
+  governance       = ["REPLACE_WITH_OU_PRODUCT_PROD", "REPLACE_WITH_OU_PRODUCT_REGULATED", "REPLACE_WITH_OU_SAAS_DEDICATED"]
+}
 
 # Primary region only. Add additional regions if the platform expands.
 allowed_regions = ["us-east-1"]
 
-# All 11 SCPs enabled in production
+# All 11 guardrails enabled in production (these are guardrails, not bundles)
 enabled_policies = [
   "deny-root",
   "deny-leave-org",

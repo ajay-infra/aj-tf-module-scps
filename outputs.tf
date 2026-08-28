@@ -1,18 +1,35 @@
 # ── SCP Outputs ───────────────────────────────────────────────────────────────
 
-output "scp_policy_ids" {
-  description = "Map of policy name → Organizations policy ID for all enabled SCPs."
+output "scp_bundle_ids" {
+  description = "Map of bundle name → Organizations policy ID for each created bundle."
   value       = { for name, policy in aws_organizations_policy.scp : name => policy.id }
 }
 
-output "scp_policy_arns" {
-  description = "Map of policy name → Organizations policy ARN for all enabled SCPs."
+output "scp_bundle_arns" {
+  description = "Map of bundle name → Organizations policy ARN for each created bundle."
   value       = { for name, policy in aws_organizations_policy.scp : name => policy.arn }
 }
 
-output "enabled_policy_names" {
-  description = "List of SCP policy names that were created."
-  value       = keys(local.active_policies)
+output "bundle_members" {
+  description = "Map of bundle name → the guardrails merged into it, after enabled_policies filtering."
+  value       = local.bundle_members
+}
+
+output "bundle_document_sizes" {
+  description = "Map of bundle name → encoded document size in characters. The AWS limit is 5,120."
+  value       = { for name, content in local.active_bundles : name => length(content) }
+}
+
+output "attachments_per_target" {
+  description = <<-EOT
+    Map of Organizations target ID → number of SCPs this module attaches to it.
+    AWS allows 5 per entity including FullAWSAccess, so 4 is the ceiling here.
+    Does not count attachments inherited from parent OUs.
+  EOT
+  value = {
+    for target in distinct([for pair in values(local.bundle_target_pairs) : pair.target_id]) :
+    target => length([for pair in values(local.bundle_target_pairs) : pair if pair.target_id == target])
+  }
 }
 
 # ── KMS SOPS Outputs ──────────────────────────────────────────────────────────

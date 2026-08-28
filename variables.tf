@@ -27,14 +27,46 @@ variable "org_root_id" {
   EOT
 }
 
-variable "target_ou_ids" {
-  type        = list(string)
+variable "bundle_attachments" {
+  type        = map(list(string))
   description = <<-EOT
-    OU IDs to attach SCPs to. Defaults to the org root (org_root_id).
-    Format: ["ou-xxxx-yyyyyyyy", ...]
-    Start with root for full coverage, then narrow to specific OUs as the org matures.
+    Which OUs (or accounts, or the root) each SCP bundle attaches to.
+    Keys must be bundle names: baseline, security-hygiene, data-protection, governance.
+    Values are Organizations target IDs — r-xxxx, ou-xxxx-yyyyyyyy, or a 12-digit account ID.
+
+    Empty ({}) means minimum viable guardrail: the baseline bundle at org_root_id
+    and nothing else.
+
+    AWS caps SCP attachments at 5 per entity and FullAWSAccess consumes one, so
+    no single target may appear in more than 4 bundles. This is validated below.
+    The quota counts DIRECT attachments only — a bundle attached to a parent OU
+    is still evaluated against every account beneath it, but does not consume
+    those accounts' slots. Depth is free; breadth at one entity is not.
+
+    Example:
+      {
+        baseline         = ["r-abcd"]
+        security-hygiene = ["ou-abcd-product", "ou-abcd-saas"]
+        governance       = ["ou-abcd-prod"]
+      }
   EOT
-  default     = []
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for bundle in keys(var.bundle_attachments) :
+      contains(["baseline", "security-hygiene", "data-protection", "governance"], bundle)
+    ])
+    error_message = "bundle_attachments keys must be one of: baseline, security-hygiene, data-protection, governance."
+  }
+
+  validation {
+    condition = alltrue([
+      for target in distinct(flatten(values(var.bundle_attachments))) :
+      length([for bundle, targets in var.bundle_attachments : bundle if contains(targets, target)]) <= 4
+    ])
+    error_message = "A target may appear in at most 4 bundles — AWS allows 5 SCP attachments per entity and FullAWSAccess uses one."
+  }
 }
 
 # ── SCP Policy Selection ──────────────────────────────────────────────────────
@@ -55,7 +87,7 @@ variable "enabled_policies" {
       deny-disable-guardduty  — prevent disabling or deleting GuardDuty detectors
       deny-public-s3-acls     — deny public-read/public-read-write S3 ACLs
       require-ebs-encryption  — deny EC2 launch with unencrypted EBS volumes
-      require-tags            — deny resource creation without Env, Team, ManagedBy tags
+      require-tags            — deny resource creation without Environment, Team, ManagedBy tags
   EOT
   default = [
     "deny-root",
