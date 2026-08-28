@@ -8,7 +8,7 @@ Provisions AWS Service Control Policies (SCPs) at the Organization level. Enforc
 
 ## Stable ref
 ```
-source = "github.com/ajay-infra/aj-tf-module-scps?ref=v0.1.0"
+source = "github.com/ajay-infra/aj-tf-module-scps?ref=v0.2.0"
 ```
 
 ## Key inputs
@@ -16,13 +16,15 @@ source = "github.com/ajay-infra/aj-tf-module-scps?ref=v0.1.0"
 |---|---|
 | `management_account_id` | AWS Org management account ID |
 | `org_root_id` | Org root ID for policy attachment |
-| `target_ou_ids` | OUs to attach policies to |
-| `enabled_policies` | List of policy names to enable |
+| `bundle_attachments` | Map of bundle name → target IDs. Empty = `baseline` at the org root |
+| `enabled_policies` | Guardrails to enable. Filters bundle membership — not a list of bundles |
 | `allowed_regions` | Regions where resource creation is permitted |
 | `sops_environments` | Environments where SOPS encryption is enforced |
 
 ## Enforced guardrails (label-taxonomy alignment)
-11 policies total. The `require-tags` policy denies resource creation unless these tags are present:
+11 guardrails, merged into 4 attached bundles (`baseline`, `security-hygiene`,
+`data-protection`, `governance`) because AWS allows only 5 SCP attachments per
+entity and `FullAWSAccess` uses one. The `require-tags` policy denies resource creation unless these tags are present:
 - `Env` — environment (dev | staging | uat | prod)
 - `Team` — owning team slug
 - `ManagedBy` — terraform | manual

@@ -1,23 +1,37 @@
 # ── Service Control Policies ──────────────────────────────────────────────────
 # Applied once at the org level — enforced regardless of IAM policies.
-# Enabled policies and attachment targets are controlled via variables.
+#
+# Policy CREATION and policy ATTACHMENT are deliberately separate. Organizations
+# policy names are unique org-wide, so each bundle is created exactly once, in
+# one state, and then attached to as many OUs as needed. Running this module
+# once per OU would collide on the second apply.
 
 resource "aws_organizations_policy" "scp" {
-  for_each = local.active_policies
+  for_each = local.active_bundles
 
   name        = "${var.name_prefix}-${each.key}"
-  description = "Guardrail: ${each.key}"
+  description = "Guardrail bundle: ${join(", ", local.bundle_members[each.key])}"
   content     = each.value
   type        = "SERVICE_CONTROL_POLICY"
 
   tags = local.full_tags
+
+  lifecycle {
+    # AWS rejects SCP documents over 5,120 characters. Whitespace is not
+    # counted, and jsonencode emits none, so length() is the real measure.
+    # Caught at plan time rather than as a mid-apply API error.
+    precondition {
+      condition     = length(each.value) <= 5120
+      error_message = "SCP bundle '${each.key}' is ${length(each.value)} characters, over the 5,120 limit. Split it or move a guardrail to another bundle."
+    }
+  }
 }
 
-# Attach each enabled policy to every target (root OU or specific OUs)
+# Attach each created bundle to every target named for it in bundle_attachments.
 resource "aws_organizations_policy_attachment" "scp" {
-  for_each = local.policy_target_pairs
+  for_each = local.bundle_target_pairs
 
-  policy_id = aws_organizations_policy.scp[each.value.policy_name].id
+  policy_id = aws_organizations_policy.scp[each.value.bundle].id
   target_id = each.value.target_id
 }
 

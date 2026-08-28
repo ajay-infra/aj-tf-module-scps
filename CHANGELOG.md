@@ -4,6 +4,17 @@ All notable changes to this module are documented here. Format loosely follows [
 
 ## [Unreleased]
 
+### Changed — BREAKING
+- **The 11 guardrails are now merged into 4 SCP bundles** (`baseline`, `security-hygiene`, `data-protection`, `governance`) rather than being created and attached individually. AWS caps SCP attachments at **5 per entity** (root, OU or account) and the built-in `FullAWSAccess` consumes one, leaving 4. The previous code attached every enabled policy to every target, so the documented "minimal" usage — all 11 at the org root — would have failed partway through the apply with a quota violation. This was never caught because the module has never had a consumer and has never been applied. Measured document sizes after merging: `baseline` 578, `security-hygiene` 994, `data-protection` 393, `governance` 2,125 — all well inside the 5,120-character limit.
+- **`target_ou_ids` (list) replaced by `bundle_attachments` (map of bundle → targets).** Attachment is now per-bundle, so a guardrail can apply at the shallowest OU that needs it and reach the rest by inheritance. Empty map means `baseline` at `org_root_id` and nothing else.
+- **Policy creation is now separate from attachment**, and the module is designed to run **once**, in a single state. The earlier plan in `aj-infra-context/arch/account-model.md` §8 — apply the module once per OU — cannot work: Organizations policy names are unique org-wide, so the second OU's apply fails with `DuplicatePolicyException`, and each run would also re-create the three SOPS KMS keys and their aliases.
+- **Guardrail content is now statement objects** (`local.scp_statements`) instead of pre-encoded documents. Encoding moved to the bundle level, which is what makes merging possible. `require-tags` additionally now generates its three near-identical statements from a loop over `["Env", "Team", "ManagedBy"]` and a shared `taggable_create_actions` local, instead of repeating a 20-action list three times by hand. Encoded output is byte-identical.
+- **Outputs renamed and extended**: `scp_policy_ids`/`scp_policy_arns`/`enabled_policy_names` → `scp_bundle_ids`/`scp_bundle_arns`/`bundle_members`, plus new `bundle_document_sizes` and `attachments_per_target` for quota visibility.
+
+### Added
+- `bundle_attachments` validates that keys are known bundle names, and that no target appears in more than 4 bundles. Note the second check cannot currently fail — with only four bundles defined, four is the maximum reachable. It guards a future fifth bundle.
+- A `lifecycle` precondition on each policy asserting the document is ≤ 5,120 characters, so an oversized bundle fails at plan time rather than as a mid-apply API error.
+
 ### Fixed
 - `require-tags` (11th guardrail — added in `7476fc4` after the `v0.1.0` release, but never wired into the surrounding docs/tfvars) is now included in `example.tfvars` and `envs/prod.tfvars`, matching `variables.tf`'s own default of all 11 policies. Previously silently excluded from both the CI dry-run plan and the real production tfvars — tag enforcement would not have been active if `envs/prod.tfvars` had been applied as-is.
 - `README.md` / `CLAUDE.md` updated to document `require-tags` — both still said "10 guardrail policies" and omitted it from every table.

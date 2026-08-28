@@ -7,14 +7,22 @@ management_account_id = "123456789012"
 # AWS Organizations root ID — found in Organizations console → Root
 org_root_id = "r-ab12"
 
-# Attach SCPs to the org root (covers all accounts).
-# Scope to specific OUs once the org structure matures.
-target_ou_ids = []
+# Bundle attachment. Guardrails are merged into 4 bundles and attached by OU
+# depth, because AWS allows only 5 SCP attachments per entity (FullAWSAccess
+# takes one of them). Placeholder OU IDs — CI only plans, never applies.
+bundle_attachments = {
+  baseline         = ["r-ab12"]
+  security-hygiene = ["ou-ab12-platform", "ou-ab12-product", "ou-ab12-saas"]
+  data-protection  = ["ou-ab12-platform", "ou-ab12-product", "ou-ab12-saas"]
+  governance       = ["ou-ab12-prod", "ou-ab12-regulated", "ou-ab12-dedicated"]
+}
 
 # Regions — deny all API calls outside this list (global services excluded)
 allowed_regions = ["us-east-1"]
 
-# All 11 SCPs enabled by default
+# All 11 guardrails enabled. These are the *guardrails*, not the bundles —
+# each is routed into a bundle by the module. Removing one here drops it from
+# whichever bundle contains it.
 enabled_policies = [
   "deny-root",
   "deny-leave-org",
