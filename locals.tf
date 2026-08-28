@@ -216,16 +216,24 @@ locals {
     }]
 
     # Three required tags on every Terraform-managed resource:
-    #   Env        — environment (dev | staging | uat | prod)
-    #   Team       — owning team slug
-    #   ManagedBy  — terraform | manual
+    #   Environment — environment (dev | staging | prod | prod-regulated | …)
+    #   Team        — owning team slug
+    #   ManagedBy   — terraform | manual
+    #
+    # NOTE the tag is Environment, not Env. Every workload module
+    # (aj-tf-module-vpc, -eks, -aurora, -valkey, -ecr, -observability) emits
+    # `Environment` via provider default_tags. Requiring `Env` here would deny
+    # every one of their creates in any OU this bundle attaches to, and no
+    # account administrator could override it. label-taxonomy.md still says
+    # `Env`; that document describes intent, not reality, and reconciling it is
+    # tracked separately.
     #
     # One Deny statement per tag so the violation message identifies which tag
     # is missing. This is by far the largest guardrail (~2,125 chars encoded,
     # because the action list repeats three times) which is why it sits alone
     # in its own bundle.
     require-tags = [
-      for tag in ["Env", "Team", "ManagedBy"] : {
+      for tag in ["Environment", "Team", "ManagedBy"] : {
         Sid      = "RequireTag${tag}"
         Effect   = "Deny"
         Action   = local.taggable_create_actions

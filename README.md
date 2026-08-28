@@ -46,7 +46,7 @@ This module is applied **once** via `provision-org.yml` in `aj-infra-release` (n
 | `deny-disable-guardduty` | Deleting or disassociating GuardDuty | Threat detection stays on in every account |
 | `deny-public-s3-acls` | Public-read / public-read-write ACLs | Belt-and-suspenders alongside S3 Block Public Access |
 | `require-ebs-encryption` | EC2 launch with unencrypted EBS volumes | All persistent storage encrypted at rest |
-| `require-tags` | Resource creation without `Env`, `Team`, `ManagedBy` tags | Enforces the platform's tagging taxonomy at creation time, not after the fact |
+| `require-tags` | Resource creation without `Environment`, `Team`, `ManagedBy` tags | Enforces the platform's tagging taxonomy at creation time, not after the fact |
 
 Each guardrail is individually toggleable via `enabled_policies`. Start with all 11 — disable only if one blocks a legitimate use case (document why). See **Bundles and attachment** below for how these 11 become 4 attached documents.
 

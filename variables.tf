@@ -87,7 +87,7 @@ variable "enabled_policies" {
       deny-disable-guardduty  — prevent disabling or deleting GuardDuty detectors
       deny-public-s3-acls     — deny public-read/public-read-write S3 ACLs
       require-ebs-encryption  — deny EC2 launch with unencrypted EBS volumes
-      require-tags            — deny resource creation without Env, Team, ManagedBy tags
+      require-tags            — deny resource creation without Environment, Team, ManagedBy tags
   EOT
   default = [
     "deny-root",
