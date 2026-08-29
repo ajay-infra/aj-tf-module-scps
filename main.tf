@@ -20,6 +20,14 @@ resource "aws_organizations_policy" "scp" {
     # AWS rejects SCP documents over 5,120 characters. Whitespace is not
     # counted, and jsonencode emits none, so length() is the real measure.
     # Caught at plan time rather than as a mid-apply API error.
+    # A stale or misspelled name in enabled_policies silently removes a
+    # guardrail rather than failing. Checked here so a typo is a plan error
+    # instead of a missing control.
+    precondition {
+      condition     = length(local.unknown_enabled_policies) == 0
+      error_message = "enabled_policies contains names matching no guardrail: ${join(", ", local.unknown_enabled_policies)}. A stale name silently empties its bundle and removes the guardrail with no error. Known guardrails: ${join(", ", sort(keys(local.scp_statements)))}."
+    }
+
     precondition {
       condition     = length(each.value) <= 5120
       error_message = "SCP bundle '${each.key}' is ${length(each.value)} characters, over the 5,120 limit. Split it or move a guardrail to another bundle."

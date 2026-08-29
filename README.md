@@ -46,7 +46,7 @@ This module is applied **once** via `provision-org.yml` in `aj-infra-release` (n
 | `deny-disable-guardduty` | Deleting or disassociating GuardDuty | Threat detection stays on in every account |
 | `deny-public-s3-acls` | Public-read / public-read-write ACLs | Belt-and-suspenders alongside S3 Block Public Access |
 | `require-ebs-encryption` | EC2 launch with unencrypted EBS volumes | All persistent storage encrypted at rest |
-| `require-tags` | Resource creation without `Environment`, `Team`, `ManagedBy` tags | Enforces the platform's tagging taxonomy at creation time, not after the fact |
+| `require-tags-product` | Resource creation without `Environment`, `Team`, `ManagedBy` tags | Enforces the platform's tagging taxonomy at creation time, not after the fact |
 
 Each guardrail is individually toggleable via `enabled_policies`. Start with all 11 — disable only if one blocks a legitimate use case (document why). See **Bundles and attachment** below for how these 11 become 4 attached documents.
 
@@ -115,9 +115,9 @@ A single SCP *document*, by contrast, may be up to **5,120 characters**. Merging
 | `baseline` | `deny-root`, `deny-leave-org`, `deny-disable-cloudtrail`, `deny-iam-users` | 578 | org root — universal |
 | `security-hygiene` | `require-imdsv2`, `require-ebs-encryption`, `deny-disable-guardduty`, `restrict-regions` | 994 | Platform, Product, SaaS |
 | `data-protection` | `deny-unencrypted-s3`, `deny-public-s3-acls` | 393 | Platform, Product, SaaS |
-| `governance` | `require-tags` | 2,125 | production-grade OUs only |
+| `governance` | `require-tags-product` | 2,846 | **product** production OUs only |
 
-`governance` sits alone because `require-tags` repeats its 20-action list once per required tag, making it larger than the other ten guardrails combined.
+`governance` sits alone because `require-tags-product` repeats its 20-action list once per required tag, making it larger than the other ten guardrails combined.
 
 Each bundle attaches at the **shallowest OU it should govern**; inheritance carries it to every account beneath. Inherited policies are evaluated against those accounts but **do not consume their attachment slots** — depth is free, breadth at a single entity is not.
 
@@ -203,7 +203,7 @@ module "scps" {
     "deny-disable-guardduty",
     "deny-public-s3-acls",
     "require-ebs-encryption",
-    "require-tags",
+    "require-tags-product",
   ]
 ```
 
