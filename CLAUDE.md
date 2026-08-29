@@ -10,8 +10,8 @@ L0 of the platform — AWS Organizations SCPs + SOPS KMS keys. Applied once to t
 management account before any cluster or workload is provisioned.
 
 Two responsibilities:
-1. **11 SCP guardrails**, merged into **4 attached bundles** — org-level denies
-   that override all IAM policies
+1. **12 SCP guardrails**, merged into **5 bundles**, 4 of them attached —
+   org-level denies that override all IAM policies
 2. **KMS SOPS keys** — one per env (dev/staging/prod), used by ksops in ArgoCD
 
 ---
@@ -40,9 +40,9 @@ No submodules — SCPs are flat (policy + attachment), KMS keys are for_each.
 - **Guardrails are statement objects, encoded per bundle** — `scp_statements` holds
   raw statement lists so they can be merged; `jsonencode` happens once per bundle.
   Previously each guardrail was pre-encoded, which made merging impossible.
-- **11 guardrails → 4 bundles.** AWS caps SCP attachments at **5 per entity** and
+- **12 guardrails → 5 bundles.** AWS caps SCP attachments at **5 per entity** and
   FullAWSAccess takes one, leaving 4. A document can be 5,120 chars. So merging
-  trades cheap space for a scarce, unraisable quota. Attaching 11 individually
+  trades cheap space for a scarce, unraisable quota. Attaching them individually
   fails on the fifth — the reason the pre-bundle module could never have applied.
 - **Creation is separate from attachment.** Policy names are unique org-wide, so
   the module runs ONCE, in one state, and attaches to many OUs. Running it per-OU
@@ -50,7 +50,7 @@ No submodules — SCPs are flat (policy + attachment), KMS keys are for_each.
   second apply and duplicates the SOPS KMS keys.
 - **Attachment depth is free, breadth is not.** The 5-per-entity quota counts
   direct attachments only; inherited SCPs are evaluated but consume no slots.
-- **enabled_policies list** — defaults to all 11. Remove a name to drop it from
+- **enabled_policies list** — defaults to all 12. Remove a name to drop it from
   whichever bundle holds it. Emptying a bundle means it is not created.
 - **management_account_id variable** — no data.aws_caller_identity, so CI plan dry
   run works with dummy creds + skip_* flags.
@@ -68,8 +68,11 @@ Plan dry run works because:
 - No data sources that call AWS (management_account_id is a variable)
 - aws_organizations_policy + aws_kms_key are resources — plan just computes them
 
-Verified 2026-08-27: `terraform plan` against `example.tfvars` yields 20 resources
-(4 policies, 10 attachments, 3 KMS keys, 3 aliases) with dummy credentials.
+Verified 2026-08-29: `terraform plan` against `example.tfvars` yields 20 resources
+(**5** policies, 10 attachments, 3 KMS keys, 3 aliases) with dummy credentials.
+Measured bundle sizes: baseline 578, data-protection 393, security-hygiene 994,
+governance 2,846, governance-saas 4,254 — all under the 5,120 limit.
+`governance-saas` is created and attached to nothing, on purpose.
 
 ---
 
@@ -94,6 +97,11 @@ After apply:
 ---
 
 ## Known TODOs
+
+- [ ] **Do not attach `governance-saas` until modules emit `Customer` and
+      `ProductLine`.** It requires two tags nothing produces; attaching it would
+      deny every create in the SaaS OUs. Same defect this policy had with `Env`.
+      See aj-infra-context/arch/tag-profiles.md §5.6 for the order.
 
 - [ ] Wire argocd_role_arns once ArgoCD is deployed (aj-infra-central)
 - [ ] Add engineer_role_arns once IAM Identity Center is configured

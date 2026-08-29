@@ -255,11 +255,61 @@ locals {
     # tracked separately.
     #
     # One Deny statement per tag so the violation message identifies which tag
-    # is missing. This is by far the largest guardrail (~2,125 chars encoded,
-    # because the action list repeats three times) which is why it sits alone
-    # in its own bundle.
+    # is missing. This is by far the largest guardrail — 2,846 chars encoded at
+    # four tags, because the action list repeats in every statement — which is
+    # why it sits alone in its own bundle.
+    #
+    # Roughly 710 chars per tag. That number is the budget: see governance-saas.
     require-tags-product = [
       for tag in ["Environment", "Team", "ManagedBy", "CostCenter"] : {
+        Sid      = "RequireTag${tag}"
+        Effect   = "Deny"
+        Action   = local.taggable_create_actions
+        Resource = "*"
+        Condition = {
+          Null = {
+            "aws:RequestTag/${tag}" = "true"
+          }
+          StringNotLike = local.service_linked_role_exemption
+        }
+      }
+    ]
+
+    # ── SaaS tagging profile ──────────────────────────────────────────────────
+    # The SAME four tags as require-tags-product, plus Customer and ProductLine.
+    #
+    # SaaS has two independent chargeback axes where product has one. Revenue is
+    # contracted per customer and recognised per product line; a customer buys
+    # several lines, and a line is sold to many customers. Neither fact derives
+    # from the other, so they cannot share a key.
+    #
+    # Team is required here too but is NOT narrowed to a product code — that
+    # narrowing is product-only and lives in the require-product-code Gatekeeper
+    # constraint, not here.
+    #
+    # PRESENCE ONLY, never vocabulary. This checks that ProductLine exists; it
+    # does not check the value is a real line. A closed list of product lines in
+    # an SCP would mean editing the one control an account administrator cannot
+    # override every time the business names a product — org-wide blast radius
+    # for a routine event. The vocabulary lives in the allowedLines parameter of
+    # k8s-manifests/policies/constraints/require-product-line.yaml.
+    #
+    # ⚠ THIS GUARDRAIL MUST NOT BE ATTACHED YET. No module emits Customer or
+    # ProductLine. Attaching it would deny every RunInstances, CreateCluster and
+    # CreateDBCluster in the SaaS OUs with no administrator override — precisely
+    # the `Env` failure recorded above, with two tags instead of one. Enabling it
+    # without attaching creates the policy document and proves it renders under
+    # the 5,120-char limit at plan time, which costs nothing and is the only
+    # signal available in a dry-run estate.
+    #
+    # Order: modules emit -> a SaaS account is observed carrying them -> attach.
+    # See aj-infra-context/arch/tag-profiles.md §5.6.
+    #
+    # Sids repeat those in require-tags-product. Harmless — Sid must be unique
+    # within a DOCUMENT, and these two guardrails are in different bundles by
+    # construction. Do not put them in the same bundle.
+    require-tags-saas = [
+      for tag in ["Environment", "Team", "ManagedBy", "CostCenter", "Customer", "ProductLine"] : {
         Sid      = "RequireTag${tag}"
         Effect   = "Deny"
         Action   = local.taggable_create_actions
@@ -306,6 +356,34 @@ locals {
     # benefit, since those accounts are not charged back.
     governance = [
       "require-tags-product",
+    ]
+
+    # The SaaS tagging profile. A SEPARATE bundle rather than more statements in
+    # `governance`, because the two profiles attach to different OUs — that is
+    # the whole point of profiles, and the per-bundle attachment model built for
+    # the 5-attachments-per-entity quota already supports it at no cost.
+    #
+    # Six tags, 4,254 chars encoded against a 5,120-char document limit —
+    # verified by plan, not estimated. Each tag costs ~710 chars because the
+    # action list repeats in every Deny statement.
+    #
+    # SO THERE IS ROOM FOR EXACTLY ONE MORE REQUIRED TAG. A seventh lands at
+    # ~4,965; an eighth exceeds the limit and the precondition in main.tf fails
+    # the plan. If SaaS ever needs an eighth, the fix is to split this into two
+    # bundles — which costs an attachment slot on SaaS/, taking it from 3 to 4
+    # against a ceiling of 4. Worth knowing before that day, not on it.
+    #
+    # ⚠ Currently attached to NOTHING. See require-tags-saas above for why, and
+    # for the order in which that changes.
+    #
+    # When it is attached, it goes to SaaS/ rather than only the production-grade
+    # OUs the way `governance` does. That divergence is deliberate: product skips
+    # tag enforcement in dev and sandbox because those accounts are not charged
+    # back, but a pooled SaaS cluster is multi-customer at EVERY stage, and
+    # unattributed pooled spend is the exact gap these tags exist to close.
+    # Attachments landing on SaaS/ would then be 3, against a ceiling of 4.
+    governance-saas = [
+      "require-tags-saas",
     ]
   }
 
