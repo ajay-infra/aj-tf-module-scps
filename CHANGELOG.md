@@ -4,6 +4,21 @@ All notable changes to this module are documented here. Format loosely follows [
 
 ## [Unreleased]
 
+### Changed — BREAKING: `require-tags` renamed to `require-tags-product`
+That guardrail encodes the **product** tagging profile — the product `Environment` vocabulary and `Team` as a product code. SaaS is a separate stack with a different profile that is not yet defined (`aj-infra-context/arch/tag-profiles.md`).
+- **`governance` now attaches to PRODUCT OUs only.** SaaS/Dedicated was in that list and was wrong. Applying product's schema to SaaS would **fail silently, not loudly**: the tags are satisfiable with values that mean nothing in a SaaS context, so they look complete while the cost data is meaningless. SaaS is now UNENFORCED rather than wrongly enforced — a known gap beats a silent one.
+- A `governance-saas` bundle attaches separately once that profile exists. The per-bundle attachment model already supports it at no architectural cost — the same split originally built for the 5-attachments-per-entity quota.
+- Callers must update `enabled_policies`. See below for why that is now an error rather than a silent removal.
+
+### Added — guard against a stale `enabled_policies` name
+**Renaming a guardrail silently deleted a bundle.** `bundle_members` filters by `contains(var.enabled_policies, name)`, so a stale name matches nothing → the bundle empties → `active_bundles` drops it → `bundle_target_pairs` skips its attachments. **Nothing errors. The guardrail simply is not there.**
+
+This happened during this very rename: the module was updated, a consumer's `enabled_policies` was not, and `governance` attached to **zero OUs** while every plan stayed green. Caught by inspecting the computed attachment map, not by any check.
+
+`local.unknown_enabled_policies` plus a `lifecycle` precondition now turns it into a plan-time failure naming the offending entry and listing the valid ones. Verified: a stale `require-tags` fails the plan with that message.
+
+
+
 ### Added
 - **`CostCenter` added to `require-tags`.** Every module already emitted it via `local.full_tags`, and nothing required it — so the tag most directly used for chargeback was the one that could go missing silently. Of the three tags previously enforced, only `Environment` and `Team` carry cost meaning; `ManagedBy` is governance.
   - `governance` bundle grows 2,141 → 2,846 characters. Still well inside the 5,120 limit, and the `lifecycle` precondition would fail the plan if it were not.

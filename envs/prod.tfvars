@@ -18,7 +18,13 @@ bundle_attachments = {
   baseline         = ["REPLACE_WITH_ORG_ROOT_ID"]
   security-hygiene = ["REPLACE_WITH_OU_PLATFORM", "REPLACE_WITH_OU_PRODUCT", "REPLACE_WITH_OU_SAAS"]
   data-protection  = ["REPLACE_WITH_OU_PLATFORM", "REPLACE_WITH_OU_PRODUCT", "REPLACE_WITH_OU_SAAS"]
-  governance       = ["REPLACE_WITH_OU_PRODUCT_PROD", "REPLACE_WITH_OU_PRODUCT_REGULATED", "REPLACE_WITH_OU_SAAS_DEDICATED"]
+  # PRODUCT OUs ONLY. SaaS/Dedicated was here and was wrong — `governance`
+  # carries require-tags-product, which encodes the PRODUCT tagging profile.
+  # SaaS is a separate stack whose profile is not yet defined
+  # (aj-infra-context/arch/tag-profiles.md §5). A SaaS bundle attaches here
+  # separately once it exists; until then SaaS is UNENFORCED rather than
+  # wrongly enforced, which is the deliberate choice.
+  governance = ["REPLACE_WITH_OU_PRODUCT_PROD", "REPLACE_WITH_OU_PRODUCT_REGULATED"]
 }
 
 # Primary region only. Add additional regions if the platform expands.
@@ -36,7 +42,7 @@ enabled_policies = [
   "deny-disable-guardduty",
   "deny-public-s3-acls",
   "require-ebs-encryption",
-  "require-tags",
+  "require-tags-product",
 ]
 
 # SOPS KMS keys

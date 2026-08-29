@@ -215,6 +215,18 @@ locals {
       }
     }]
 
+    # ── PRODUCT PROFILE ONLY ────────────────────────────────────────────────
+    # This guardrail encodes the PRODUCT tagging profile. SaaS is a separate
+    # stack with a different profile that is not yet defined — see
+    # aj-infra-context/arch/tag-profiles.md.
+    #
+    # The `governance` bundle carrying this must therefore attach to PRODUCT
+    # OUs only. Attaching it to SaaS/ would force product's schema onto a stack
+    # that does not use it: satisfiable with values that mean nothing there, so
+    # the tags look complete while the cost data is meaningless. A SaaS bundle
+    # attaches separately once its profile exists — the per-bundle attachment
+    # model already supports that at no architectural cost.
+    #
     # Four required tags on every Terraform-managed resource:
     #   Environment — environment (dev | staging | prod | prod-regulated | …)
     #   Team        — owning team slug
@@ -246,7 +258,7 @@ locals {
     # is missing. This is by far the largest guardrail (~2,125 chars encoded,
     # because the action list repeats three times) which is why it sits alone
     # in its own bundle.
-    require-tags = [
+    require-tags-product = [
       for tag in ["Environment", "Team", "ManagedBy", "CostCenter"] : {
         Sid      = "RequireTag${tag}"
         Effect   = "Deny"
@@ -293,9 +305,25 @@ locals {
     # requiring tags in dev/sandbox blocks console experimentation for no
     # benefit, since those accounts are not charged back.
     governance = [
-      "require-tags",
+      "require-tags-product",
     ]
   }
+
+  # Names in enabled_policies that match no guardrail. This exists because
+  # renaming a guardrail silently DELETES a bundle: bundle_members filters by
+  # contains(var.enabled_policies, name), so a stale name matches nothing, the
+  # bundle empties, active_bundles drops it, and bundle_target_pairs skips its
+  # attachments.
+  #
+  # Nothing errors. The guardrail simply is not there.
+  #
+  # That happened on 2026-08-29 renaming require-tags -> require-tags-product:
+  # the module was updated, a consumer's enabled_policies was not, and the
+  # governance bundle attached to ZERO OUs while every plan stayed green.
+  unknown_enabled_policies = [
+    for name in var.enabled_policies : name
+    if !contains(keys(local.scp_statements), name)
+  ]
 
   # var.enabled_policies gates individual guardrails; a bundle whose members are
   # all disabled is not created at all.

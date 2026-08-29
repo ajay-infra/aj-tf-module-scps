@@ -14,7 +14,10 @@ bundle_attachments = {
   baseline         = ["r-ab12"]
   security-hygiene = ["ou-ab12-platform", "ou-ab12-product", "ou-ab12-saas"]
   data-protection  = ["ou-ab12-platform", "ou-ab12-product", "ou-ab12-saas"]
-  governance       = ["ou-ab12-prod", "ou-ab12-regulated", "ou-ab12-dedicated"]
+  # PRODUCT OUs only — `governance` carries require-tags-product, the PRODUCT
+  # tagging profile. SaaS is a separate stack whose profile is not yet defined,
+  # so ou-ab12-dedicated was removed. See aj-infra-context/arch/tag-profiles.md.
+  governance       = ["ou-ab12-prod", "ou-ab12-regulated"]
 }
 
 # Regions — deny all API calls outside this list (global services excluded)
@@ -34,7 +37,7 @@ enabled_policies = [
   "deny-disable-guardduty",
   "deny-public-s3-acls",
   "require-ebs-encryption",
-  "require-tags",
+  "require-tags-product",
 ]
 
 # SOPS KMS keys — one per environment
