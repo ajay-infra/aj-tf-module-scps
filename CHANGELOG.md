@@ -4,6 +4,13 @@ All notable changes to this module are documented here. Format loosely follows [
 
 ## [Unreleased]
 
+### Added
+- **`CostCenter` added to `require-tags`.** Every module already emitted it via `local.full_tags`, and nothing required it — so the tag most directly used for chargeback was the one that could go missing silently. Of the three tags previously enforced, only `Environment` and `Team` carry cost meaning; `ManagedBy` is governance.
+  - `governance` bundle grows 2,141 → 2,846 characters. Still well inside the 5,120 limit, and the `lifecycle` precondition would fail the plan if it were not.
+  - **Not added, deliberately: `Class` and `Customer`.** Both are defined in `label-taxonomy.md` for product-vs-SaaS and per-customer cost attribution, and **no module emits either yet.** Requiring a tag before the emit side exists is precisely the failure this policy already had once — it demanded `Env` while every module produced `Environment`, which would have denied every `RunInstances`, `CreateCluster` and `CreateDBCluster` in the attached OU with no administrator override. **Modules first, SCP second.**
+
+
+
 ### Changed — BREAKING
 - **The 11 guardrails are now merged into 4 SCP bundles** (`baseline`, `security-hygiene`, `data-protection`, `governance`) rather than being created and attached individually. AWS caps SCP attachments at **5 per entity** (root, OU or account) and the built-in `FullAWSAccess` consumes one, leaving 4. The previous code attached every enabled policy to every target, so the documented "minimal" usage — all 11 at the org root — would have failed partway through the apply with a quota violation. This was never caught because the module has never had a consumer and has never been applied. Measured document sizes after merging: `baseline` 578, `security-hygiene` 994, `data-protection` 393, `governance` 2,125 — all well inside the 5,120-character limit.
 - **`target_ou_ids` (list) replaced by `bundle_attachments` (map of bundle → targets).** Attachment is now per-bundle, so a guardrail can apply at the shallowest OU that needs it and reach the rest by inheritance. Empty map means `baseline` at `org_root_id` and nothing else.
