@@ -17,7 +17,7 @@ bundle_attachments = {
   # PRODUCT OUs only — `governance` carries require-tags-product, the PRODUCT
   # tagging profile. SaaS is a separate stack whose profile is not yet defined,
   # so ou-ab12-dedicated was removed. See aj-infra-context/arch/tag-profiles.md.
-  governance       = ["ou-ab12-prod", "ou-ab12-regulated"]
+  governance = ["ou-ab12-prod", "ou-ab12-regulated"]
 }
 
 # Regions — deny all API calls outside this list (global services excluded)
