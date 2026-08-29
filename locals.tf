@@ -215,10 +215,24 @@ locals {
       }
     }]
 
-    # Three required tags on every Terraform-managed resource:
+    # Four required tags on every Terraform-managed resource:
     #   Environment — environment (dev | staging | prod | prod-regulated | …)
     #   Team        — owning team slug
     #   ManagedBy   — terraform | manual
+    #   CostCenter  — chargeback code
+    #
+    # CostCenter added 2026-08-28. Every module already emitted it via
+    # local.full_tags and nothing required it — so the tag most directly used
+    # for chargeback was the one that could go missing silently. Of the other
+    # three, only Environment and Team carry cost meaning; ManagedBy is
+    # governance.
+    #
+    # NOT added, deliberately: Class and Customer. They are defined in
+    # label-taxonomy.md and NO MODULE EMITS THEM YET. Requiring a tag before the
+    # emit side exists is exactly the failure this policy already had once,
+    # when it demanded `Env` and every module produced `Environment` — it would
+    # deny every RunInstances, CreateCluster and CreateDBCluster in the OU with
+    # no administrator override. Modules first, SCP second.
     #
     # NOTE the tag is Environment, not Env. Every workload module
     # (aj-tf-module-vpc, -eks, -aurora, -valkey, -ecr, -observability) emits
@@ -233,7 +247,7 @@ locals {
     # because the action list repeats three times) which is why it sits alone
     # in its own bundle.
     require-tags = [
-      for tag in ["Environment", "Team", "ManagedBy"] : {
+      for tag in ["Environment", "Team", "ManagedBy", "CostCenter"] : {
         Sid      = "RequireTag${tag}"
         Effect   = "Deny"
         Action   = local.taggable_create_actions
