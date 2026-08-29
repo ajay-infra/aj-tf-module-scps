@@ -6,7 +6,7 @@ Terraform module for AWS Organizations Service Control Policies (SCPs) and SOPS 
 
 ## What this module does
 
-**SCPs** are organization-level guardrails that override IAM policies. Even an account administrator cannot bypass an SCP denial. This module defines 11 guardrails, merges them into 4 SCP documents, and attaches those documents to the org root and OUs you nominate.
+**SCPs** are organization-level guardrails that override IAM policies. Even an account administrator cannot bypass an SCP denial. This module defines 12 guardrails, merges them into 5 SCP documents, and attaches those documents to the org root and OUs you nominate.
 
 **SOPS KMS keys** (one per environment) encrypt secrets committed to `k8s-manifests`. ArgoCD decrypts them at render time via the ksops plugin. These keys live in the management account and their policy grants Decrypt to ArgoCD's Pod Identity role in each cluster.
 
@@ -32,7 +32,7 @@ This module is applied **once** via `provision-org.yml` in `aj-infra-release` (n
 
 ---
 
-## The 11 guardrail policies
+## The 12 guardrail policies
 
 | Policy | What it blocks | Why |
 |---|---|---|
@@ -46,9 +46,10 @@ This module is applied **once** via `provision-org.yml` in `aj-infra-release` (n
 | `deny-disable-guardduty` | Deleting or disassociating GuardDuty | Threat detection stays on in every account |
 | `deny-public-s3-acls` | Public-read / public-read-write ACLs | Belt-and-suspenders alongside S3 Block Public Access |
 | `require-ebs-encryption` | EC2 launch with unencrypted EBS volumes | All persistent storage encrypted at rest |
-| `require-tags-product` | Resource creation without `Environment`, `Team`, `ManagedBy` tags | Enforces the platform's tagging taxonomy at creation time, not after the fact |
+| `require-tags-product` | Resource creation without `Environment`, `Team`, `ManagedBy`, `CostCenter` | Enforces the **product** tagging profile at creation time, not after the fact |
+| `require-tags-saas` | The same four, plus `Customer` and `ProductLine` | The **SaaS** profile. SaaS has two chargeback axes where product has one. ⚠ **Not safe to attach yet** — no module emits the last two |
 
-Each guardrail is individually toggleable via `enabled_policies`. Start with all 11 — disable only if one blocks a legitimate use case (document why). See **Bundles and attachment** below for how these 11 become 4 attached documents.
+Each guardrail is individually toggleable via `enabled_policies`. Start with all 12 — disable only if one blocks a legitimate use case (document why). A name in `enabled_policies` that matches no guardrail **fails the plan**: the list is filtered by name, so a stale name would otherwise empty a bundle and silently detach it. See **Bundles and attachment** below for how these 12 become 5 documents, only 4 of which are attached today.
 
 ---
 
@@ -106,9 +107,9 @@ creation_rules:
 
 ## Bundles and attachment
 
-The 11 guardrails are not attached individually. **AWS caps SCP attachments at 5 per entity** (root, OU or account), and the built-in `FullAWSAccess` consumes one of those, leaving a real budget of 4. That quota is hard — it cannot be raised through Service Quotas. Attaching 11 separate policies to the root fails on the fifth.
+The 12 guardrails are not attached individually. **AWS caps SCP attachments at 5 per entity** (root, OU or account), and the built-in `FullAWSAccess` consumes one of those, leaving a real budget of 4. That quota is hard — it cannot be raised through Service Quotas. Attaching 12 separate policies to the root fails on the fifth.
 
-A single SCP *document*, by contrast, may be up to **5,120 characters**. Merging related guardrails therefore trades cheap document space for scarce attachment slots. The four bundles and their measured sizes:
+A single SCP *document*, by contrast, may be up to **5,120 characters**. Merging related guardrails therefore trades cheap document space for scarce attachment slots. The five bundles and their measured sizes:
 
 | Bundle | Guardrails | Size | Attach at |
 |---|---|---|---|
@@ -116,8 +117,17 @@ A single SCP *document*, by contrast, may be up to **5,120 characters**. Merging
 | `security-hygiene` | `require-imdsv2`, `require-ebs-encryption`, `deny-disable-guardduty`, `restrict-regions` | 994 | Platform, Product, SaaS |
 | `data-protection` | `deny-unencrypted-s3`, `deny-public-s3-acls` | 393 | Platform, Product, SaaS |
 | `governance` | `require-tags-product` | 2,846 | **product** production OUs only |
+| `governance-saas` | `require-tags-saas` | 4,254 | ⚠ **nothing, yet** — see below |
 
-`governance` sits alone because `require-tags-product` repeats its 20-action list once per required tag, making it larger than the other ten guardrails combined.
+The two `governance` bundles sit alone because a tag guardrail repeats its 20-action list once per required tag, making either one larger than the other ten guardrails combined. They are separate bundles rather than one because **the two tagging profiles attach to different OUs** — which is what profiles are for, and which the per-bundle attachment model already supports at no cost.
+
+At ~710 characters per required tag, `governance-saas` has room for **exactly one more**. A seventh tag lands near 4,965; an eighth exceeds 5,120 and the precondition in `main.tf` fails the plan.
+
+### Why `governance-saas` is attached to nothing
+
+`Customer` and `ProductLine` are defined in the taxonomy and **no module emits them**. An SCP requiring a tag nothing produces denies every `ec2:RunInstances`, `eks:CreateCluster` and `rds:CreateDBCluster` in the OUs it covers, with no account-administrator override — this policy already had that defect once, when it demanded `Env` and every module emitted `Environment`.
+
+Enabling it without attaching creates the document and proves it renders within the character limit at plan time. That costs nothing and is the only signal available before an org exists. The order is: **modules emit → a SaaS account is observed carrying the tags → attach.**
 
 Each bundle attaches at the **shallowest OU it should govern**; inheritance carries it to every account beneath. Inherited policies are evaluated against those accounts but **do not consume their attachment slots** — depth is free, breadth at a single entity is not.
 
@@ -159,7 +169,16 @@ module "scps" {
     baseline         = ["r-ab12"]
     security-hygiene = ["ou-ab12-platform", "ou-ab12-product", "ou-ab12-saas"]
     data-protection  = ["ou-ab12-platform", "ou-ab12-product", "ou-ab12-saas"]
-    governance       = ["ou-ab12-prod", "ou-ab12-regulated", "ou-ab12-dedicated"]
+    # Product profile: production-grade product OUs only. Requiring tags in
+    # nonprod and sandbox blocks console experimentation in accounts that are
+    # not charged back.
+    governance = ["ou-ab12-prod", "ou-ab12-regulated"]
+
+    # governance-saas is deliberately absent — see "Why governance-saas is
+    # attached to nothing" above. When it lands it attaches at SaaS/ rather than
+    # only the production OUs, because a pooled cluster is multi-customer at
+    # every stage. That takes SaaS/ from 2 attachments to 3, against a ceiling
+    # of 4.
   }
 }
 ```

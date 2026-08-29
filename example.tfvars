@@ -38,6 +38,11 @@ enabled_policies = [
   "deny-public-s3-acls",
   "require-ebs-encryption",
   "require-tags-product",
+  # The SaaS profile. Enabled so the document is created and its size checked
+  # at plan time; NOT attached below — no module emits Customer or ProductLine
+  # yet, and attaching a tag requirement before the emit side exists denies
+  # every create in the OU. See locals.tf, require-tags-saas.
+  "require-tags-saas",
 ]
 
 # SOPS KMS keys — one per environment

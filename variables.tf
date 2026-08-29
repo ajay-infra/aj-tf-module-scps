@@ -74,8 +74,11 @@ variable "bundle_attachments" {
 variable "enabled_policies" {
   type        = list(string)
   description = <<-EOT
-    SCP policy names to create and attach. Defaults to all 11 guardrails.
+    SCP policy names to create and attach. Defaults to all 12 guardrails.
     Remove a name from this list to skip that policy (e.g. during initial rollout).
+    A name here that matches no guardrail FAILS THE PLAN — see the precondition
+    in main.tf. Filtering by name means a rename would otherwise empty a bundle
+    and silently detach it.
     Available policies:
       deny-root               — prevent root user from taking any action
       deny-leave-org          — prevent accounts from leaving the organization
@@ -87,7 +90,10 @@ variable "enabled_policies" {
       deny-disable-guardduty  — prevent disabling or deleting GuardDuty detectors
       deny-public-s3-acls     — deny public-read/public-read-write S3 ACLs
       require-ebs-encryption  — deny EC2 launch with unencrypted EBS volumes
-      require-tags-product            — deny resource creation without Environment, Team, ManagedBy tags
+      require-tags-product    — deny creation without Environment, Team, ManagedBy, CostCenter
+      require-tags-saas       — the same four plus Customer and ProductLine. SaaS
+                                only, and NOT SAFE TO ATTACH until modules emit
+                                those two tags — see locals.tf.
   EOT
   default = [
     "deny-root",
@@ -101,6 +107,7 @@ variable "enabled_policies" {
     "deny-public-s3-acls",
     "require-ebs-encryption",
     "require-tags-product",
+    "require-tags-saas",
   ]
 }
 
