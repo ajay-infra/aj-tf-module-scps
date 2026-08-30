@@ -292,7 +292,7 @@ locals {
     # an SCP would mean editing the one control an account administrator cannot
     # override every time the business names a product — org-wide blast radius
     # for a routine event. The vocabulary lives in the allowedLines parameter of
-    # k8s-manifests/policies/constraints/require-product-line.yaml.
+    # aj-cluster-baseline/policies/constraints/require-product-line.yaml.
     #
     # ⚠ THIS GUARDRAIL MUST NOT BE ATTACHED YET. No module emits Customer or
     # ProductLine. Attaching it would deny every RunInstances, CreateCluster and
@@ -443,6 +443,6 @@ locals {
   # KMS SOPS key descriptions
   sops_key_descriptions = {
     for env in var.sops_environments :
-    env => "SOPS encryption key — ${env} environment secrets in k8s-manifests"
+    env => "SOPS encryption key — ${env} environment secrets in aj-cluster-baseline"
   }
 }
