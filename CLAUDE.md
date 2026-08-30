@@ -90,7 +90,7 @@ terraform apply -var-file=envs/prod.tfvars
 ```
 
 After apply:
-1. Copy `sops_kms_key_arns` output into k8s-manifests/.sops.yaml
+1. Copy `sops_kms_key_arns` output into aj-cluster-baseline/.sops.yaml
 2. Engineers run `sops -e` to encrypt secrets using their role in engineer_role_arns
 3. ArgoCD decrypts at render time via ksops + argocd_role_arns
 

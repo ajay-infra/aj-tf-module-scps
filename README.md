@@ -8,7 +8,7 @@ Terraform module for AWS Organizations Service Control Policies (SCPs) and SOPS 
 
 **SCPs** are organization-level guardrails that override IAM policies. Even an account administrator cannot bypass an SCP denial. This module defines 12 guardrails, merges them into 5 SCP documents, and attaches those documents to the org root and OUs you nominate.
 
-**SOPS KMS keys** (one per environment) encrypt secrets committed to `k8s-manifests`. ArgoCD decrypts them at render time via the ksops plugin. These keys live in the management account and their policy grants Decrypt to ArgoCD's Pod Identity role in each cluster.
+**SOPS KMS keys** (one per environment) encrypt secrets committed to `aj-cluster-baseline`. ArgoCD decrypts them at render time via the ksops plugin. These keys live in the management account and their policy grants Decrypt to ArgoCD's Pod Identity role in each cluster.
 
 Both resources are management-plane — provisioned once, before any cluster or workload exists.
 
@@ -21,7 +21,7 @@ This is **Stage 0** — it runs before everything else, in the management accoun
 ```
 Stage 0:  aj-tf-module-scps     ← this module (management account)
             → SCPs applied to org root — all member accounts protected
-            → KMS keys created — SOPS encryption ready for k8s-manifests
+            → KMS keys created — SOPS encryption ready for aj-cluster-baseline
 
 Stage 1+: All other modules run in member accounts (dev/staging/prod)
             → SCPs are already enforced in those accounts
@@ -61,7 +61,7 @@ One KMS key per environment (`dev`, `staging`, `prod`). Alias: `alias/sops-<env>
 Engineer laptop
   sops -e secret.yaml
     → calls KMS Encrypt (engineer_role_arns)
-    → encrypted file committed to k8s-manifests
+    → encrypted file committed to aj-cluster-baseline
 
 ArgoCD render time
   ksops plugin decrypts SOPS file
@@ -90,10 +90,10 @@ terraform init \
 terraform apply -var-file=envs/prod.tfvars
 ```
 
-KMS key ARNs from `sops_kms_key_arns` output are then written into `.sops.yaml` in `k8s-manifests`:
+KMS key ARNs from `sops_kms_key_arns` output are then written into `.sops.yaml` in `aj-cluster-baseline`:
 
 ```yaml
-# k8s-manifests/.sops.yaml
+# aj-cluster-baseline/.sops.yaml
 creation_rules:
   - path_regex: envs/dev/.*\.yaml
     kms: arn:aws:kms:us-east-1:DEV_ACCOUNT:key/<dev-key-id>
