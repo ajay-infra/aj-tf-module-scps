@@ -69,6 +69,49 @@ variable "bundle_attachments" {
   }
 }
 
+variable "product_bundle_attachments" {
+  type        = map(list(string))
+  description = <<-EOT
+    Bundle attachments for the PRODUCT side of the OU tree. Same shape as
+    bundle_attachments, merged with saas_bundle_attachments and with
+    bundle_attachments itself.
+
+    This exists because the org is a single Terraform apply — Organizations
+    policy names are unique org-wide, so a second apply collides with
+    DuplicatePolicyException — while the attachment MAP is naturally two
+    separate concerns owned by two different sets of people. Terraform does not
+    merge a map variable across -var-file arguments (last file wins), so two
+    files pointing at one variable would silently discard the first. Two
+    variables, merged here, is the only way to keep one apply and two files.
+  EOT
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for bundle in keys(var.product_bundle_attachments) :
+      contains(["baseline", "security-hygiene", "data-protection", "governance"], bundle)
+    ])
+    error_message = "product_bundle_attachments keys must be one of: baseline, security-hygiene, data-protection, governance."
+  }
+}
+
+variable "saas_bundle_attachments" {
+  type        = map(list(string))
+  description = <<-EOT
+    Bundle attachments for the SAAS side of the OU tree. See
+    product_bundle_attachments for why this is a separate variable.
+  EOT
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for bundle in keys(var.saas_bundle_attachments) :
+      contains(["baseline", "security-hygiene", "data-protection", "governance"], bundle)
+    ])
+    error_message = "saas_bundle_attachments keys must be one of: baseline, security-hygiene, data-protection, governance."
+  }
+}
+
 # ── SCP Policy Selection ──────────────────────────────────────────────────────
 
 variable "enabled_policies" {
