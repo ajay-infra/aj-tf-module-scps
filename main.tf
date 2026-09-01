@@ -41,6 +41,13 @@ resource "aws_organizations_policy_attachment" "scp" {
 
   policy_id = aws_organizations_policy.scp[each.value.bundle].id
   target_id = each.value.target_id
+
+  lifecycle {
+    precondition {
+      condition     = length(local.over_cap_targets) == 0
+      error_message = "These targets exceed 4 bundles across the merged product/saas/base attachment maps: ${join(", ", local.over_cap_targets)}. AWS allows 5 SCP attachments per entity and FullAWSAccess uses one."
+    }
+  }
 }
 
 # ── KMS Keys for SOPS ─────────────────────────────────────────────────────────

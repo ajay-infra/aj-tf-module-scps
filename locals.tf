@@ -423,9 +423,36 @@ locals {
   # Empty bundle_attachments means "minimum viable guardrail": the universal
   # bundle at the org root, one attachment, nothing else. Real deployments pass
   # the full OU map — see envs/prod.tfvars.
-  resolved_attachments = length(var.bundle_attachments) > 0 ? var.bundle_attachments : {
+  # The three attachment maps merge into one. A bundle named in more than one
+  # gets the union of its targets, so product and saas can each attach the same
+  # bundle to their own OU without knowing about each other.
+  merged_attachments = {
+    for bundle in distinct(concat(
+      keys(var.bundle_attachments),
+      keys(var.product_bundle_attachments),
+      keys(var.saas_bundle_attachments),
+      )) : bundle => distinct(concat(
+      lookup(var.bundle_attachments, bundle, []),
+      lookup(var.product_bundle_attachments, bundle, []),
+      lookup(var.saas_bundle_attachments, bundle, []),
+    ))
+  }
+
+  # Empty means "minimum viable guardrail": the universal bundle at the org
+  # root, one attachment, nothing else.
+  resolved_attachments = length(local.merged_attachments) > 0 ? local.merged_attachments : {
     baseline = [var.org_root_id]
   }
+
+  # The 5-per-entity quota applies to the MERGED map, and no variable validation
+  # block can see more than its own variable. Splitting the map without moving
+  # this check is how a target ends up in three bundles from one file and two
+  # from another, passing both validations and failing at the fifth attachment
+  # against live AWS.
+  over_cap_targets = [
+    for target in distinct(flatten(values(local.resolved_attachments))) : target
+    if length([for b, ts in local.resolved_attachments : b if contains(ts, target)]) > 4
+  ]
 
   # One aws_organizations_policy_attachment per (bundle, target) pair, skipping
   # any bundle that was not created because all its members are disabled.
