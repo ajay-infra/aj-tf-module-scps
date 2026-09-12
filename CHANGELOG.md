@@ -4,6 +4,24 @@ All notable changes to this module are documented here. Format loosely follows [
 
 ## [Unreleased]
 
+### Added — control-account guardrails: `protect-dns`, `protect-registry`, `deny-compute`
+`aj-infra-context/arch/account-model.md` v2 (2026-09-12) gives the apex hosted zone and the container registry their own accounts. This is what makes those accounts guardrails rather than boundaries.
+
+- **`protect-dns`** → bundle **`dns-guard`**, Platform/DNS. Denies `route53:DeleteHostedZone`, `ChangeResourceRecordSets`, `DisassociateVPCFromHostedZone`, `DeleteReusableDelegationSet`, `DeleteQueryLoggingConfig` and the registrar-side escapes (`route53domains` Transfer/Delete/UpdateNameservers/DisableTransferLock/TransferToAnotherAccount) to everyone except **`dns_pipeline_role_arns`**.
+- **`protect-registry`** → bundle **`registry-guard`**, Platform/Registry. Denies `ecr:BatchDeleteImage`, `DeleteRepository`, `DeleteRepositoryPolicy`, `DeleteLifecyclePolicy`, `DeletePullThroughCacheRule`, `DeleteRegistryPolicy`, `PutImageTagMutability`, `PutReplicationConfiguration` to everyone except **`registry_pipeline_role_arns`**. Lifecycle expiry is performed by the ECR service and is unaffected.
+- **`deny-compute`** → bundle **`control-plane`**, every OU whose accounts are `runs_workloads: false`. Denies create-compute across EC2/EKS/ECS/RDS/ElastiCache/Lambda/App Runner/Batch/SageMaker/Lightsail, no exemption.
+- **`platform_bundle_attachments`** — fourth attachment map, merged with the other three. Keys: `dns-guard`, `registry-guard`, `control-plane`.
+- The two `*_pipeline_role_arns` lists **default to empty, and empty means nobody is exempt** — the `Condition` is omitted rather than rendered as an empty array. Fail closed.
+
+Estimated encoded sizes 575 / 432 / 607 chars against the 5,120 limit; the plan's `bundle_document_sizes` output records the real numbers.
+
+### Fixed — `governance-saas` could not be attached by any variable
+`saas_bundle_attachments`' validation only accepted the original four bundle names, so uncommenting `governance-saas` in a consumer's `envs/org/saas/scps.tfvars` — the documented activation step — would have failed validation. `governance-saas` is now an accepted key there. No behaviour change until a consumer names it.
+
+Additive. MINOR. Consumers that want the guardrails add the three names to `enabled_policies` and attach the bundles; consumers that do nothing see no change.
+
+## [v0.2.0 – v0.3.0] — tagged without this heading moving
+
 ### Changed — BREAKING: `require-tags` renamed to `require-tags-product`
 That guardrail encodes the **product** tagging profile — the product `Environment` vocabulary and `Team` as a product code. SaaS is a separate stack with a different profile that is not yet defined (`aj-infra-context/arch/tag-profiles.md`).
 - **`governance` now attaches to PRODUCT OUs only.** SaaS/Dedicated was in that list and was wrong. Applying product's schema to SaaS would **fail silently, not loudly**: the tags are satisfiable with values that mean nothing in a SaaS context, so they look complete while the cost data is meaningless. SaaS is now UNENFORCED rather than wrongly enforced — a known gap beats a silent one.
