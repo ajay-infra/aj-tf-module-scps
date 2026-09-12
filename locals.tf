@@ -322,6 +322,119 @@ locals {
         }
       }
     ]
+
+    # ── Control-account guardrails (2026-09-12) ──────────────────────────────
+    # aj-infra-context/arch/account-model.md v2 §6–7. Two accounts exist only
+    # to hold one sensitive thing — the apex hosted zone, the container
+    # registry — and are worth their overhead only if the thing cannot be
+    # destroyed or rewritten by any principal but the pipeline that owns it.
+    # Without these the accounts are boundaries, not guardrails.
+    #
+    # The exemption is a LIST of role ARNs, and an EMPTY list means nobody is
+    # exempt — the Condition block is omitted rather than rendered empty (an
+    # empty ArnNotLike array is not a valid condition). Fail closed: an apex
+    # nobody can write beats an apex anybody can.
+
+    # The apex zone is the single most sensitive resource in the estate:
+    # control of it is control of every hostname. This account holds NS
+    # delegations only; every A/CNAME lives in a delegated per-stage zone in
+    # the account that serves that stage. So record writes here are rare,
+    # deliberate, and the pipeline's — and zone deletion is never anyone's.
+    # route53domains is the registrar side: transfer-out and NS changes at the
+    # registrar bypass every hosted-zone control, so they are denied too.
+    protect-dns = [
+      merge({
+        Sid    = "ProtectApexZones"
+        Effect = "Deny"
+        Action = [
+          "route53:DeleteHostedZone",
+          "route53:ChangeResourceRecordSets",
+          "route53:DisassociateVPCFromHostedZone",
+          "route53:DeleteReusableDelegationSet",
+          "route53:DeleteQueryLoggingConfig",
+          "route53domains:TransferDomain",
+          "route53domains:DeleteDomain",
+          "route53domains:UpdateDomainNameservers",
+          "route53domains:DisableDomainTransferLock",
+          "route53domains:TransferDomainToAnotherAwsAccount",
+        ]
+        Resource = "*"
+        }, length(var.dns_pipeline_role_arns) > 0 ? {
+        Condition = {
+          ArnNotLike = {
+            "aws:PrincipalArn" = var.dns_pipeline_role_arns
+          }
+        }
+      } : {})
+    ]
+
+    # Every image every cluster pulls comes from this one registry, and every
+    # image reference in aj-gitops is rewritten to point at it. An image
+    # deleted or a tag re-pointed here changes what runs on every node in the
+    # estate. Lifecycle-policy expiry is NOT affected: it is performed by the
+    # ECR service, not by a principal an SCP evaluates — so the registry still
+    # ages images out on its own schedule, and no human or pipeline deletes
+    # one by hand. Tag immutability is the other half: with mutability
+    # locked, a tag cannot be re-pointed at a different digest.
+    protect-registry = [
+      merge({
+        Sid    = "ProtectRegistry"
+        Effect = "Deny"
+        Action = [
+          "ecr:BatchDeleteImage",
+          "ecr:DeleteRepository",
+          "ecr:DeleteRepositoryPolicy",
+          "ecr:DeleteLifecyclePolicy",
+          "ecr:DeletePullThroughCacheRule",
+          "ecr:DeleteRegistryPolicy",
+          "ecr:PutImageTagMutability",
+          "ecr:PutReplicationConfiguration",
+        ]
+        Resource = "*"
+        }, length(var.registry_pipeline_role_arns) > 0 ? {
+        Condition = {
+          ArnNotLike = {
+            "aws:PrincipalArn" = var.registry_pipeline_role_arns
+          }
+        }
+      } : {})
+    ]
+
+    # Control accounts run nothing. envs/org/accounts.yaml says
+    # `runs_workloads: false` for mgmt, security, logs, dns and registry;
+    # check-accounts.py stops them owning a cluster directory. This is the
+    # same rule at the AWS layer: the create-compute calls are denied outright,
+    # for every principal, no exemption. (The management account is exempt by
+    # construction — SCPs never apply to it — which is why it must hold
+    # nothing; see account-model.md §3.)
+    deny-compute = [{
+      Sid    = "DenyCompute"
+      Effect = "Deny"
+      Action = [
+        "ec2:RunInstances",
+        "ec2:RequestSpotInstances",
+        "ec2:RequestSpotFleet",
+        "ec2:CreateFleet",
+        "eks:CreateCluster",
+        "eks:CreateNodegroup",
+        "eks:CreateFargateProfile",
+        "ecs:CreateCluster",
+        "ecs:RunTask",
+        "ecs:CreateService",
+        "rds:CreateDBInstance",
+        "rds:CreateDBCluster",
+        "elasticache:CreateCacheCluster",
+        "elasticache:CreateReplicationGroup",
+        "elasticache:CreateServerlessCache",
+        "lambda:CreateFunction",
+        "apprunner:CreateService",
+        "batch:SubmitJob",
+        "sagemaker:CreateNotebookInstance",
+        "sagemaker:CreateEndpoint",
+        "lightsail:*",
+      ]
+      Resource = "*"
+    }]
   }
 
   # ── Bundles ─────────────────────────────────────────────────────────────────
@@ -385,6 +498,22 @@ locals {
     governance-saas = [
       "require-tags-saas",
     ]
+
+    # ── Control-account bundles (2026-09-12) ────────────────────────────────
+    # One per control OU, so each stays a single attachment slot. `control-plane`
+    # attaches to every OU whose accounts are `runs_workloads: false` —
+    # Platform/{Security,Logs,DNS,Registry} — and the two guards attach beside
+    # it on their own OU. Worst case on any one OU: 2 direct attachments, plus
+    # security-hygiene and data-protection inherited from Platform/ for free.
+    dns-guard = [
+      "protect-dns",
+    ]
+    registry-guard = [
+      "protect-registry",
+    ]
+    control-plane = [
+      "deny-compute",
+    ]
   }
 
   # Names in enabled_policies that match no guardrail. This exists because
@@ -423,7 +552,7 @@ locals {
   # Empty bundle_attachments means "minimum viable guardrail": the universal
   # bundle at the org root, one attachment, nothing else. Real deployments pass
   # the full OU map — see envs/prod.tfvars.
-  # The three attachment maps merge into one. A bundle named in more than one
+  # The four attachment maps merge into one. A bundle named in more than one
   # gets the union of its targets, so product and saas can each attach the same
   # bundle to their own OU without knowing about each other.
   merged_attachments = {
@@ -431,10 +560,12 @@ locals {
       keys(var.bundle_attachments),
       keys(var.product_bundle_attachments),
       keys(var.saas_bundle_attachments),
+      keys(var.platform_bundle_attachments),
       )) : bundle => distinct(concat(
       lookup(var.bundle_attachments, bundle, []),
       lookup(var.product_bundle_attachments, bundle, []),
       lookup(var.saas_bundle_attachments, bundle, []),
+      lookup(var.platform_bundle_attachments, bundle, []),
     ))
   }
 

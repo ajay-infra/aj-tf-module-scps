@@ -109,7 +109,7 @@ creation_rules:
 
 The 12 guardrails are not attached individually. **AWS caps SCP attachments at 5 per entity** (root, OU or account), and the built-in `FullAWSAccess` consumes one of those, leaving a real budget of 4. That quota is hard — it cannot be raised through Service Quotas. Attaching 12 separate policies to the root fails on the fifth.
 
-A single SCP *document*, by contrast, may be up to **5,120 characters**. Merging related guardrails therefore trades cheap document space for scarce attachment slots. The five bundles and their measured sizes:
+A single SCP *document*, by contrast, may be up to **5,120 characters**. Merging related guardrails therefore trades cheap document space for scarce attachment slots. The eight bundles and their measured sizes (the three control-account bundles, added 2026-09-12, are estimated from the encoded statement; the plan output records the real number):
 
 | Bundle | Guardrails | Size | Attach at |
 |---|---|---|---|
@@ -118,10 +118,23 @@ A single SCP *document*, by contrast, may be up to **5,120 characters**. Merging
 | `data-protection` | `deny-unencrypted-s3`, `deny-public-s3-acls` | 393 | Platform, Product, SaaS |
 | `governance` | `require-tags-product` | 2,846 | **product** production OUs only |
 | `governance-saas` | `require-tags-saas` | 4,254 | ⚠ **nothing, yet** — see below |
+| `dns-guard` | `protect-dns` | ~575 | Platform/DNS |
+| `registry-guard` | `protect-registry` | ~430 | Platform/Registry |
+| `control-plane` | `deny-compute` | ~610 | Platform/{Security, Logs, DNS, Registry} — every OU whose accounts run nothing |
 
 The two `governance` bundles sit alone because a tag guardrail repeats its 20-action list once per required tag, making either one larger than the other ten guardrails combined. They are separate bundles rather than one because **the two tagging profiles attach to different OUs** — which is what profiles are for, and which the per-bundle attachment model already supports at no cost.
 
 At ~710 characters per required tag, `governance-saas` has room for **exactly one more**. A seventh tag lands near 4,965; an eighth exceeds 5,120 and the precondition in `main.tf` fails the plan.
+
+### Control-account guardrails (2026-09-12)
+
+`aj-infra-context/arch/account-model.md` v2 gives two things their own account because each is an org-wide blast radius: the **apex hosted zone** (`aj-platform-dns`) and the **container registry** (`aj-platform-registry`). An account is only a boundary; these bundles make it a guardrail.
+
+- **`protect-dns`** denies zone deletion, record writes, VPC disassociation and every registrar-side escape (`route53domains` transfer, delete, nameserver change, transfer-lock disable) to every principal **except** `dns_pipeline_role_arns`. The apex holds NS delegations only, so record writes are rare, deliberate, and the pipeline's.
+- **`protect-registry`** denies image and repository deletion, tag-mutability changes, pull-through-cache rule removal and replication changes to every principal except `registry_pipeline_role_arns`. **Lifecycle-policy expiry still runs** — it is performed by the ECR service, which SCPs do not evaluate — so the registry ages images out on its own schedule and nobody deletes one by hand.
+- **`deny-compute`** denies every create-compute call outright — EC2, EKS, ECS, RDS, ElastiCache, Lambda, App Runner, Batch, SageMaker, Lightsail — with no exemption. It is `runs_workloads: false` from `aj-infra/envs/org/accounts.yaml` enforced at the AWS layer, and it attaches to every control OU, not only the two above.
+
+**The exemption lists default to empty, and empty means nobody.** The `Condition` is omitted rather than rendered as an empty array (which is not valid), so an unset variable fails closed. Set the pipeline role before the first NS delegation or image push has to happen, not after it is denied.
 
 ### Why `governance-saas` is attached to nothing
 

@@ -20,6 +20,19 @@ bundle_attachments = {
   governance = ["ou-ab12-prod", "ou-ab12-regulated"]
 }
 
+# Control accounts — account-model.md v2 §7. Each control OU gets at most two
+# direct attachments; security-hygiene and data-protection reach it by
+# inheritance from ou-ab12-platform.
+platform_bundle_attachments = {
+  dns-guard      = ["ou-ab12-dns"]
+  registry-guard = ["ou-ab12-registry"]
+  control-plane  = ["ou-ab12-security", "ou-ab12-logs", "ou-ab12-dns", "ou-ab12-registry"]
+}
+# Empty means NOBODY may write the apex zones or delete images. Set these to the
+# pipelines' roles before the first delegation / push, not after it is denied.
+dns_pipeline_role_arns      = ["arn:aws:iam::777777777777:role/dns-pipeline"]
+registry_pipeline_role_arns = ["arn:aws:iam::555555555555:role/registry-pipeline"]
+
 # Regions — deny all API calls outside this list (global services excluded)
 allowed_regions = ["us-east-1"]
 
@@ -43,6 +56,10 @@ enabled_policies = [
   # yet, and attaching a tag requirement before the emit side exists denies
   # every create in the OU. See locals.tf, require-tags-saas.
   "require-tags-saas",
+  # Control-account guardrails — account-model.md v2 §7.
+  "protect-dns",
+  "protect-registry",
+  "deny-compute",
 ]
 
 # SOPS KMS keys — one per environment

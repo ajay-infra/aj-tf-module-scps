@@ -106,10 +106,61 @@ variable "saas_bundle_attachments" {
   validation {
     condition = alltrue([
       for bundle in keys(var.saas_bundle_attachments) :
-      contains(["baseline", "security-hygiene", "data-protection", "governance"], bundle)
+      contains(["baseline", "security-hygiene", "data-protection", "governance", "governance-saas"], bundle)
     ])
-    error_message = "saas_bundle_attachments keys must be one of: baseline, security-hygiene, data-protection, governance."
+    # governance-saas was missing from this list in v0.3.0, so the bundle the
+    # SaaS tagging profile lives in could not be attached by ANY variable —
+    # uncommenting it in envs/org/saas/scps.tfvars would have failed validation.
+    error_message = "saas_bundle_attachments keys must be one of: baseline, security-hygiene, data-protection, governance, governance-saas."
   }
+}
+
+variable "platform_bundle_attachments" {
+  type        = map(list(string))
+  description = <<-EOT
+    Bundle attachments for the PLATFORM side of the OU tree — the control
+    accounts. Same shape as bundle_attachments, merged with the other three.
+
+    Keys: dns-guard (Platform/DNS), registry-guard (Platform/Registry),
+    control-plane (every OU whose accounts are runs_workloads: false —
+    Platform/{Security,Logs,DNS,Registry}). See
+    aj-infra-context/arch/account-model.md §7.
+  EOT
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for bundle in keys(var.platform_bundle_attachments) :
+      contains(["dns-guard", "registry-guard", "control-plane"], bundle)
+    ])
+    error_message = "platform_bundle_attachments keys must be one of: dns-guard, registry-guard, control-plane."
+  }
+}
+
+variable "dns_pipeline_role_arns" {
+  type        = list(string)
+  description = <<-EOT
+    The only principals allowed to change records in, or delete, the apex
+    hosted zones — the DNS pipeline's role(s) in aj-platform-dns. Patterns are
+    matched with ArnNotLike, so wildcards are allowed.
+
+    EMPTY (the default) means NOBODY is exempt: the Condition is omitted and
+    the Deny applies to every principal. Fail closed. Set this before the
+    first NS delegation has to be written, not after it fails.
+  EOT
+  default     = []
+}
+
+variable "registry_pipeline_role_arns" {
+  type        = list(string)
+  description = <<-EOT
+    The only principals allowed to delete images or repositories, change tag
+    mutability, or remove pull-through cache rules in aj-platform-registry —
+    the registry pipeline's role(s). Same semantics as dns_pipeline_role_arns:
+    empty means nobody. Lifecycle-policy expiry is unaffected either way; it is
+    performed by the ECR service, which an SCP does not evaluate.
+  EOT
+  default     = []
 }
 
 # ── SCP Policy Selection ──────────────────────────────────────────────────────
