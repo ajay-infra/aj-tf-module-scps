@@ -75,5 +75,5 @@ engineer_role_arns = []
 kms_deletion_window_days = 30
 
 name_prefix = "aj-infra"
-team        = "team-0001"   # a team code — aj-infra/envs/org/teams.yaml
+team        = "team-0001" # a team code — aj-infra/envs/org/teams.yaml
 cost_center = "infra-2026-q1"
