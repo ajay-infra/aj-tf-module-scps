@@ -249,8 +249,12 @@ variable "kms_deletion_window_days" {
 # ── Tags ──────────────────────────────────────────────────────────────────────
 
 variable "team" {
-  type    = string
-  default = "infra-core"
+  description = "Owning team CODE — the Team tag, and the `team` label on any namespace this creates. A row in aj-infra/envs/org/teams.yaml. No default: `infra-core` was the default until 2026-09-13, and a caller that forgot to pass a team silently tagged everything with a slug nobody registered; with require-product-code at deny, a namespace so labelled is refused."
+  type        = string
+  validation {
+    condition     = can(regex("^team-[0-9]{4}$", var.team))
+    error_message = "team must be a team code — team- and four digits (aj-infra/envs/org/teams.yaml)."
+  }
 }
 
 variable "cost_center" {
